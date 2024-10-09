@@ -20,12 +20,27 @@ use strict;
 use warnings;
 use v5.10;
 use FileHandle;
-use IO::Socket;
+use Socket qw(
+    inet_pton
+    inet_ntop
+    getaddrinfo
+    getnameinfo
+    IPPROTO_TCP
+    NI_NUMERICHOST
+);
+use IO::Socket::IP;
 use IO::Select;
 use Digest::MD5;
 use Data::Dumper;
 use Data::HexDump;
-use Net::IP qw(ip_bintoip ip_compress_address ip_expand_address ip_iptobin);
+use Net::IP qw(
+    ip_bintoip
+    ip_compress_address
+    ip_expand_address
+    ip_iptobin
+    ip_is_ipv4
+    ip_is_ipv6
+);
 use Time::HiRes qw(time);
 
 use vars qw($VERSION @ISA @EXPORT);
@@ -64,6 +79,7 @@ use constant DEFAULT_DICTIONARY => '/etc/raddb/dictionary';
 $dict_id{ NO_VENDOR() }{1}{type} = 'string';
 $dict_id{ NO_VENDOR() }{2}{type} = 'string';
 $dict_id{ NO_VENDOR() }{4}{type} = 'ipaddr';
+$dict_id{ NO_VENDOR() }{95}{type} = 'ipv6addr';
 
 # ATTRIBUTE Vendor-Specific 26 octets
 use constant ATTR_VENDOR => 26;
@@ -97,7 +113,7 @@ my %SERVICES = (
 sub new {
     my $class = shift;
     my %h = @_;
-    my ($host, $port, $service);
+    my ($ip, $port, $service);
     my $self = {};
 
     bless $self, $class;
@@ -126,18 +142,12 @@ sub new {
         # contains resolved node list in text representation
         $self->{'node_list_a'} = {};
         foreach my $node_a (@{$h{'NodeList'}}) {
-            my ($n_host, $n_port) = split(/:/, $node_a);
-            $n_port ||= $serv_port;
-            my @hostinfo = gethostbyname($n_host);
-            if (!scalar(@hostinfo)) {
-                print STDERR "Can't resolve node hostname '$n_host': $! - skipping it!\n" if $debug;
-                next;
-            }
-
-            my $ip = inet_ntoa($hostinfo[4]);
-            print STDERR "Adding ".$ip.':'.$n_port." to node list.\n" if $debug;
-            # store split address to avoid additional parsing later
-            $self->{'node_list_a'}->{$ip.':'.$n_port} = [$ip, $n_port];
+            my ($n_ip, $n_port) = $self->_parse_ip_and_port($node_a);
+            next unless $n_ip;
+            $n_port ||=$serv_port;
+            print STDERR "Adding ".$n_ip.':'.$n_port." to node list.\n" if $debug;
+            my $serv_addr = IO::Socket::IP->join_addr($n_ip, $n_port);
+            $self->{'node_list_a'}->{$serv_addr} = [$n_ip, $n_port];
         }
 
         if (!scalar(keys %{$self->{'node_list_a'}})) {
@@ -146,41 +156,34 @@ sub new {
     }
 
     if ($h{'Host'}) {
-        ($host, $port) = split(/:/, $h{'Host'});
-        $port ||= $serv_port;
-        print STDERR "Using Radius server $host:$port\n" if $debug;
+        ($ip, $port) = $self->_parse_ip_and_port($h{'Host'});
 
-        my @hostinfo = gethostbyname($host);
-        if (!scalar(@hostinfo)) {
-            if ($self->{'node_list_a'}) {
-                print STDERR "Can't resolve hostname '$host'\n" if $debug;
-                return $self;
-            }
-
-            return $self->set_error('ESOCKETFAIL', "Can't resolve hostname '".$host."'.");
+        unless ($ip) {
+            return $self->set_error('ESOCKETFAIL', "Can't resolve hostname'". $h{'Host'} ."'.");
         }
 
-        my $ip = inet_ntoa($hostinfo[4]);
+        $port ||= $serv_port;
+
+        my $serv_addr = IO::Socket::IP->join_addr($ip, $port);
+        print STDERR "Using Radius server $serv_addr\n" if $debug;
 
         # if Host used with NodeList - it must be from the list
-        if ($self->{'node_list_a'} && !exists($self->{'node_list_a'}->{$ip.':'.$port})) {
-            print STDERR "'$host' doesn't exist in node list - ignoring it!\n" if $debug;
+        if ($self->{'node_list_a'} && !exists($self->{'node_list_a'}->{$serv_addr})) {
+            print STDERR "'$serv_addr' doesn't exist in node list - ignoring it!\n" if $debug;
             return $self;
         }
 
         # set as active node
-        $self->{'node_addr_a'} = $ip.':'.$port;
+        $self->{'node_addr_a'} = $serv_addr;
 
         my %io_sock_args = (
             Type => SOCK_DGRAM,
             Proto => 'udp',
             Timeout => $self->{'timeout'},
             LocalAddr => $self->{'localaddr'},
-            PeerAddr => $host,
-            PeerPort => $port,
+            PeerAddr => $serv_addr
         );
-        $self->{'sock'} = IO::Socket::INET->new(%io_sock_args)
-            or return $self->set_error('ESOCKETFAIL', $@);
+        $self->{'sock'} = IO::Socket::IP->new(%io_sock_args) or die ("ESOCKETFAIL, $@");
     }
 
     return $self;
@@ -255,7 +258,7 @@ sub send_packet {
                 if ($debug) { print STDERR 'Sending request to: '.$node."\n"; }
                 $io_sock_args{'PeerAddr'} = $self->{'node_list_a'}->{$node}->[0];
                 $io_sock_args{'PeerPort'} = $self->{'node_list_a'}->{$node}->[1];
-                my $new_sock = IO::Socket::INET->new(%io_sock_args)
+                my $new_sock = IO::Socket::IP->new(%io_sock_args)
                     or return $self->set_error('ESOCKETFAIL', $@);
                 $res = $new_sock->send($data) || $self->set_error('ESENDFAIL', $!);
                 if ($res) {
@@ -292,6 +295,7 @@ sub recv_packet {
         $timeout -= $end_time - $start_time;
         $from_addr_n = $ready[0]->recv($data, 65536);
         if (defined($from_addr_n)) {
+            print STDERR "recv_packet: sockaddr_family is " . sockaddr_family($from_addr_n) . "\n" if $debug;
             last;
         }
         if (!defined($from_addr_n) && !defined($self->{'sock_list'})) {
@@ -311,8 +315,9 @@ sub recv_packet {
         # switching to single active node
         $self->{'sock'} = $ready[0];
         $self->{'sock_list'} = undef;
-        my ($node_port, $node_iaddr) = sockaddr_in($from_addr_n);
-        $self->{'node_addr_a'} = inet_ntoa($node_iaddr).':'.$node_port;
+        my $fam = sockaddr_family($from_addr_n);
+        my ($node_port, $node_iaddr) = ($fam == AF_INET ? sockaddr_in($from_addr_n) : sockaddr_in6($from_addr_n));
+        $self->{'node_addr_a'} = IO::Socket::IP->join_addr(inet_ntop($fam, $node_iaddr), $node_port);
         if ($debug) {  print STDERR "Registering new active peeer:".$self->{'node_addr_a'}."\n"; }
     }
 
@@ -360,11 +365,18 @@ sub check_pwd {
 
     $nas = eval { $self->{'sock'}->sockhost() } unless defined($nas);
     $self->clear_attributes;
-    $self->add_attributes (
+    my @attributes = (
         { Name => 1, Value => $name, Type => 'string' },
         { Name => 2, Value => $pwd, Type => 'string' },
-        { Name => 4, Value => $nas || '127.0.0.1', Type => 'ipaddr' }
     );
+    if (ip_is_ipv4($nas)) {
+        push @attributes, { Name => 4, Value => $nas, Type => "ipaddr" };
+    } elsif (ip_is_ipv6($nas)) {
+        push @attributes, { Name => 95, Value => $nas, Type => "ipv6addr" };
+    } else {
+        die "Unknown INET family\n";
+    }
+    $self->add_attributes ( @attributes );
 
     $self->send_packet(ACCESS_REQUEST);
     my $rcv = $self->recv_packet();
@@ -439,21 +451,12 @@ sub _decode_integer {
 
 sub _decode_ipaddr {
     my ( $self, $vendor, $id, $name, $value ) = @_;
-    return inet_ntoa($value);
+    return inet_ntop(AF_INET, $value);
 }
 
 sub _decode_ipv6addr {
     my ( $self, $vendor, $id, $name, $value ) = @_;
-
-    my $binary_val = unpack( 'B*', $value );
-    if ($binary_val) {
-        my $ip_val = ip_bintoip( $binary_val, 6 );
-        if ($ip_val) {
-            return ip_compress_address( $ip_val, 6 );
-        }
-    }
-
-    return undef;
+    return inet_ntop(AF_INET6, $value);
 }
 
 sub _decode_ipv6prefix {
@@ -657,21 +660,12 @@ sub _encode_integer {
 
 sub _encode_ipaddr {
     my ( $self, $vendor, $id, $name, $value ) = @_;
-    return inet_aton($value);
+    return inet_pton(AF_INET, $value);
 }
 
 sub _encode_ipv6addr {
     my ( $self, $vendor, $id, $name, $value ) = @_;
-
-    my $expanded_val = ip_expand_address( $value, 6 );
-    if ($expanded_val) {
-        $value = ip_iptobin( $expanded_val, 6 );
-        if ( defined $value ) {
-            return pack( 'B*', $value );
-        }
-    }
-
-    return undef;
+    return inet_pton(AF_INET6, $value);
 }
 
 sub _encode_ipv6prefix {
@@ -776,14 +770,15 @@ sub _encode_signed {
 
 sub _encode_comboip {
     my ( $self, $vendor, $id, $name, $value ) = @_;
-
-    if ( $value =~ m/^\d+\.\d+\.\d+.\d+/ ) {
-        # IPv4 address
-        return inet_aton($value);
+    my $fam;
+    if (ip_is_ipv4($value)) {
+        $fam = AF_INET;
+    } elsif (ip_is_ipv6($value)) {
+        $fam = AF_INET6;
+    } else {
+        die "Unknown INET family\n";
     }
-
-    # currently unsupported, use IPv4
-    return undef;
+    return inet_pton($fam, $value);
 }
 
 sub _encode_tlv {
@@ -852,6 +847,31 @@ sub _encode_value {
 
     return undef;
 } ## end sub _encode_value
+
+sub _parse_ip_and_port {
+    my ($self, $server, $return_all) = @_;
+    my ($hostname, $port, $ip, $error);
+    my (@addrinfo, @result);
+
+    ($hostname, $port) = IO::Socket::IP->split_addr($server);
+    # use protocol to reduce array size, otherwise array will contain addrinfo for each protocol
+    ( $error, @addrinfo ) = getaddrinfo( $hostname, 0, { 'protocol' => IPPROTO_TCP });
+    if ($error) {
+        print STDERR "Can't resolve hostname '$hostname': $error!\n" if $debug;
+        return [];
+    }
+    # getaddrinfo will return an array with IPs, if there more than one A or AAAA record for the host.
+    # Prefer IPv6.
+    ( $error, $ip ) = getnameinfo( $addrinfo[0]->{addr}, NI_NUMERICHOST );
+    if ($error && ! $ip) {
+        print STDERR "Can't get IP '$hostname': $error\n" if $debug;
+        return [];
+    } elsif ($error) {
+        print STDERR "Get some error while resolving '$hostname': $error\n" if $debug;
+    }
+
+    return $ip, $port;
+} ## end sub _parse_ip_and_port
 
 sub add_attributes {
     my ($self, @attr) = @_;

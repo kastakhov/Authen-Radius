@@ -35,7 +35,8 @@ is( Authen::Radius->_encode_value(NoVendor, -1, 'signed', 'NNN-Signed', -10), "\
 is( Authen::Radius->_encode_value(NoVendor, -1, 'signed', 'NNN-Signed', 535), "\x00\x00\x02\x17", 'signed');
 
 is( Authen::Radius->_encode_value(NoVendor, -1, 'combo-ip', 'NNN-Combo', '10.20.30.40'), "\x0a\x14\x1e\x28", 'combo-ip v4');
-is( Authen::Radius->_encode_value(NoVendor, -1, 'combo-ip', 'NNN-Combo', 'fe80::16da:e9ff:feef:ae06'), undef , 'combo-ip v6 not supported');
+is( Authen::Radius->_encode_value(NoVendor, -1, 'combo-ip', 'NNN-Combo', 'fe80::16da:e9ff:feef:ae06'),
+    "\xfe\x80\x00\x00\x00\x00\x00\x00\x16\xda\xe9\xff\xfe\xef\xae\x06" , 'combo-ip v6');
 
 is( Authen::Radius->_encode_value(NoVendor, 1, 'tlv', 'WiMAX-Capability', [
       {Name => 'WiMAX-Release', Value => '5.0', TLV_ID => 1},

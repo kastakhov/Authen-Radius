@@ -12,7 +12,7 @@ WriteMakefile(
     },
     PREREQ_PM => {
         'Digest::MD5' => 2.20,
-        'IO' => 1.12,
+        'IO' => 1.38,
         'Data::Dumper' => 1,
         'Data::HexDump' => 0.02,
         'Net::IP' => 1.26,
