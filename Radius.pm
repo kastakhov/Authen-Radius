@@ -334,7 +334,7 @@ sub recv_packet {
     my $rfc3579_msg_auth;
     foreach my $a ($self->get_attributes()) {
         if ($a->{Code} == $RFC3579_MSG_AUTH_ATTR_ID) {
-            $rfc3579_msg_auth = $a->{Value};
+            $rfc3579_msg_auth = $a->{RawValue};
             last;
         }
     }
