@@ -2,48 +2,59 @@
 # Example script to check authentication on a RADIUS server
 use strict;
 use warnings;
+use v5.10;
 use Authen::Radius;
+use Getopt::Long qw( GetOptions );
 
-my $verbose = 0;
-$verbose = 1 if (($ARGV[0] // '') eq '--verbose');
+my ($verbose, $host, $secret, $user, $password, $dictionary, $radius);
+GetOptions(
+    'verbose' => sub {$verbose = 1},
+    'host=s' => \$host,
+    'secret=s' => \$secret,
+    'user=s' => \$user,
+    'password=s' => \$password,
+    'dictionary=s' => \$dictionary
+);
+&help unless ($host && $secret && $user && $password);
 
 STDOUT->autoflush(1);
 
-print "Make sure this machine is in your Radius clients file!\n";
+say "Make sure this machine is in your Radius clients file!";
 
-print "Enter hostname[:port] of your Radius server: ";
-chomp( my $host = <STDIN> );
+eval {
+    $radius = Authen::Radius->new(
+        Host   => $host,
+        Secret => $secret,
+        Debug  => $verbose,
+    );
+};
 
-print "Enter shared-secret of your Radius server: ";
-chomp( my $secret = <STDIN> );
+die $@ unless $radius;
+$radius->load_dictionary($dictionary);
 
-print "Enter a username to be validated: ";
-chomp( my $user = <STDIN> );
-
-print "Enter this user's password: ";
-chomp( my $pwd = <STDIN> );
-
-my $r = Authen::Radius->new(
-            Host   => $host,
-            Secret => $secret,
-            Debug  => $verbose,
-        );
-
-Authen::Radius->load_dictionary();
-
-my $result = $r->check_pwd( $user, $pwd );
+my $result = $radius->check_pwd( $user, $password );
 if ($result) {
-    print "Accept\n";
+    say "Accept";
 }
-elsif ($r->get_error() eq 'ENONE') {
-    print "Reject\n";
+elsif ($radius->get_error() eq 'ENONE') {
+    say "Reject";
 }
 else {
-    print 'Error: ', $r->strerror(), "\n";
+    say 'Error: ', $radius->strerror();
     exit 1;
 }
 
-my @attributes = $r->get_attributes();
+my @attributes = $radius->get_attributes();
 foreach my $attr (@attributes) {
     printf "%s %s = %s\n", $attr->{Vendor} // ' ', $attr->{Name}, $attr->{Value} // $attr->{RawValue};
+}
+
+sub help {
+    say "Usage:";
+    say "--host - provide hostname or IP of radius server";
+    say "--secret - secret key for radius server";
+    say "--user - username for test";
+    say "--password - password for test user";
+    say "--verbose - debug output";
+    exit(1);
 }
