@@ -35,7 +35,7 @@
             "Data::Dumper" : "1",
             "Data::HexDump" : "0.02",
             "Digest::MD5" : "2.2",
-            "IO" : "1.12",
+            "IO" : "1.38",
             "Net::IP" : "1.26",
             "perl" : "5.010000"
          }
