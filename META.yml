@@ -9,7 +9,7 @@ build_requires:
 configure_requires:
   ExtUtils::MakeMaker: '0'
 dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 7.48, CPAN::Meta::Converter version 2.150010'
+generated_by: 'ExtUtils::MakeMaker version 7.70, CPAN::Meta::Converter version 2.150010'
 license: unknown
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -23,7 +23,8 @@ requires:
   Data::Dumper: '1'
   Data::HexDump: '0.02'
   Digest::MD5: '2.2'
-  IO: '1.12'
+  IO: '1.25'
+  IO::Socket::IP: '0.38'
   Net::IP: '1.26'
   perl: '5.010000'
 version: '0.32'

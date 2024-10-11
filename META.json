@@ -4,13 +4,13 @@
       "unknown"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 7.48, CPAN::Meta::Converter version 2.150010",
+   "generated_by" : "ExtUtils::MakeMaker version 7.70, CPAN::Meta::Converter version 2.150010",
    "license" : [
       "unknown"
    ],
    "meta-spec" : {
       "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
-      "version" : "2"
+      "version" : 2
    },
    "name" : "Authen-Radius",
    "no_index" : {
@@ -35,8 +35,8 @@
             "Data::Dumper" : "1",
             "Data::HexDump" : "0.02",
             "Digest::MD5" : "2.2",
-            "IO" : "1.38",
-            "IO::Socket::IP" : "0.37",
+            "IO" : "1.25",
+            "IO::Socket::IP" : "0.38",
             "Net::IP" : "1.26",
             "perl" : "5.010000"
          }
@@ -50,5 +50,5 @@
    },
    "release_status" : "stable",
    "version" : "0.32",
-   "x_serialization_backend" : "JSON::PP version 2.27400_02"
+   "x_serialization_backend" : "JSON::PP version 4.16"
 }

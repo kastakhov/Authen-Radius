@@ -12,8 +12,8 @@ WriteMakefile(
     },
     PREREQ_PM => {
         'Digest::MD5' => 2.20,
-        'IO' => 1.38,
-        'IO::Socket::IP' => 0.37,
+        'IO' => 1.25,
+        'IO::Socket::IP' => 0.38,
         'Data::Dumper' => 1,
         'Data::HexDump' => 0.02,
         'Net::IP' => 1.26,
