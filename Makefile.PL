@@ -23,3 +23,12 @@ WriteMakefile(
         'Test::NoWarnings' => 0,
     },
 );
+
+sub MY::postamble {
+    my $self = shift;
+    my %r = (%{ $self->{PREREQ_PM} || {} }, %{ $self->{BUILD_REQUIRES} || {} }, %{ $self->{TEST_REQUIRES} || {} } );
+    open my $cpanfile, '>', 'cpanfile' or die "Cannot open cpanfile: $!";
+    print $cpanfile "requires '$_', '$r{$_}';\n" for keys %r;
+    close $cpanfile;
+    return;
+}
